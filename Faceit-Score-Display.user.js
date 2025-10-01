@@ -22,6 +22,32 @@
         INACTIVE_INTERVAL: 1000           // Частота обновления счета когда вкладка неактивна (миллисекунды)
     };
 
+    // === СЕЛЕКТОРЫ ДЛЯ ПОИСКА СЧЕТА ===
+    const SELECTORS = {
+        // Основные селекторы для поиска счета (если перестанут работать - добавьте новые)
+        SCORE_ELEMENTS: [
+            'h3[class*="FactionsDetails__FactionScore"]',     // Основной селектор
+            'h3[class*="MatchScore__"]',                      // Резервный селектор 1
+            '.score-display h3',                              // Резервный селектор 2
+            '[data-testid="team-score"]'                      // Резервный селектор 3
+        ],
+        
+        // Контейнеры где искать счет
+        SCORE_CONTAINERS: [
+            '[class*="FactionsDetails__Container"]',
+            '[class*="Header__Container"]',
+            '[class*="MatchHeader__"]',
+            '.match-score-container'
+        ],
+        
+        // Для резервного поиска - классы которые должны содержать элементы со счетом
+        FALLBACK_CLASS_PATTERNS: [
+            'FactionsDetails__',
+            'MatchScore__',
+            'TeamScore__'
+        ]
+    };
+
     // === КЛЮЧИ ЛОКАЛЬНОГО ХРАНИЛИЩА ===
     const STORAGE_KEYS = {
         FONT_SIZE: 'faceitScoreFontSize',
@@ -104,19 +130,9 @@
 
     // === ПОИСК ЭЛЕМЕНТОВ СЧЕТА ===
     function findScores() {
-        // Основной поиск по классу
-        let scoreNodes = document.querySelectorAll('h3[class*="FactionsDetails__FactionScore"]');
-        if (scoreNodes.length >= 2) {
-            return { 
-                scoreTeam1Element: scoreNodes[0], 
-                scoreTeam2Element: scoreNodes[1] 
-            };
-        }
-
-        // Поиск внутри контейнера
-        const container = document.querySelector('[class*="FactionsDetails__Container"], [class*="Header__Container"]');
-        if (container) {
-            scoreNodes = container.querySelectorAll('h3[class*="FactionsDetails__FactionScore"]');
+        // 1. Основной поиск по всем селекторам
+        for (const selector of SELECTORS.SCORE_ELEMENTS) {
+            const scoreNodes = document.querySelectorAll(selector);
             if (scoreNodes.length >= 2) {
                 return { 
                     scoreTeam1Element: scoreNodes[0], 
@@ -125,11 +141,31 @@
             }
         }
 
-        // Резервный поиск
-        const fallbackNodes = Array.from(document.querySelectorAll('h3'))
+        // 2. Поиск внутри контейнеров
+        for (const containerSelector of SELECTORS.SCORE_CONTAINERS) {
+            const container = document.querySelector(containerSelector);
+            if (container) {
+                for (const selector of SELECTORS.SCORE_ELEMENTS) {
+                    const scoreNodes = container.querySelectorAll(selector);
+                    if (scoreNodes.length >= 2) {
+                        return { 
+                            scoreTeam1Element: scoreNodes[0], 
+                            scoreTeam2Element: scoreNodes[1] 
+                        };
+                    }
+                }
+            }
+        }
+
+        // 3. Резервный поиск по содержимому и классам
+        const fallbackNodes = Array.from(document.querySelectorAll('h3, div, span'))
             .filter(el => {
                 const text = el.textContent?.trim() || '';
-                return /\b\d+\b/.test(text) && /FactionsDetails__/.test(el.className);
+                const hasNumber = /\b\d+\b/.test(text);
+                const hasRelevantClass = SELECTORS.FALLBACK_CLASS_PATTERNS.some(pattern => 
+                    el.className.includes(pattern)
+                );
+                return hasNumber && hasRelevantClass;
             });
 
         return fallbackNodes.length >= 2 
@@ -485,7 +521,12 @@
         document.addEventListener('visibilitychange', handleVisibilityChange);
         
         // Наблюдение за изменениями DOM
-        const observeTarget = document.querySelector('[class*="FactionsDetails__Container"], [class*="Header__Container"]') || document.body;
+        let observeTarget = null;
+        for (const containerSelector of SELECTORS.SCORE_CONTAINERS) {
+            observeTarget = document.querySelector(containerSelector);
+            if (observeTarget) break;
+        }
+        observeTarget = observeTarget || document.body;
         new MutationObserver(handleDOMChanges).observe(observeTarget, { 
             childList: true, 
             subtree: true, 
