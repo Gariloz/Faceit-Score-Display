@@ -91,6 +91,9 @@
                   })();
     
     const channelId = `faceit-score-${tabId}`;
+    
+    // Сохраняем channelId для возможного переподключения попапов
+    sessionStorage.setItem('faceit-channel-id', channelId);
     const scoreChannel = (typeof BroadcastChannel !== 'undefined') 
         ? new BroadcastChannel(channelId) 
         : null;
@@ -320,8 +323,21 @@
         return `<script>
 (() => {
     const KEYS = ${JSON.stringify(STORAGE_KEYS)};
-    const CHANNEL_ID = '${channelId}';
-    const UNIQUE_PAYLOAD_KEY = KEYS.SCORE_PAYLOAD + '-' + CHANNEL_ID;
+    let CHANNEL_ID = '${channelId}';
+    let UNIQUE_PAYLOAD_KEY = KEYS.SCORE_PAYLOAD + '-' + CHANNEL_ID;
+    
+    // Функция для переподключения к новому каналу
+    function reconnectToNewChannel() {
+        const newChannelId = sessionStorage.getItem('faceit-channel-id');
+        if (newChannelId && newChannelId !== CHANNEL_ID) {
+            CHANNEL_ID = newChannelId;
+            UNIQUE_PAYLOAD_KEY = KEYS.SCORE_PAYLOAD + '-' + CHANNEL_ID;
+            setupChannelListeners(); // Переподключаем слушатели
+        }
+    }
+    
+    // Проверяем каждые 2 секунды, не изменился ли канал
+    setInterval(reconnectToNewChannel, 2000);
     
     const elements = {
         fontSize: document.getElementById('fontSizeInput'),
@@ -371,22 +387,35 @@
         }
     });
 
-    // BroadcastChannel для обновлений
-    if ('BroadcastChannel' in window) {
-        const channel = new BroadcastChannel(CHANNEL_ID);
-        channel.addEventListener('message', (e) => {
-            const data = e.data || {};
-            if (data.type === 'update') {
-                if (data.fontSize !== undefined) {
-                    elements.fontSize.value = String(data.fontSize);
-                    elements.score.style.fontSize = data.fontSize + 'px';
+    // Настройка слушателей каналов
+    let currentChannel = null;
+    
+    function setupChannelListeners() {
+        // Закрываем старый канал если есть
+        if (currentChannel) {
+            currentChannel.close();
+        }
+        
+        // Создаем новый канал
+        if ('BroadcastChannel' in window) {
+            currentChannel = new BroadcastChannel(CHANNEL_ID);
+            currentChannel.addEventListener('message', (e) => {
+                const data = e.data || {};
+                if (data.type === 'update') {
+                    if (data.fontSize !== undefined) {
+                        elements.fontSize.value = String(data.fontSize);
+                        elements.score.style.fontSize = data.fontSize + 'px';
+                    }
+                    if (data.scoreTeam1 !== undefined && data.scoreTeam2 !== undefined) {
+                        elements.score.textContent = data.scoreTeam1 + ' - ' + data.scoreTeam2;
+                    }
                 }
-                if (data.scoreTeam1 !== undefined && data.scoreTeam2 !== undefined) {
-                    elements.score.textContent = data.scoreTeam1 + ' - ' + data.scoreTeam2;
-                }
-            }
-        });
+            });
+        }
     }
+    
+    // Инициализируем слушатели
+    setupChannelListeners();
 
     // Резервный канал через localStorage
     window.addEventListener('storage', (e) => {
