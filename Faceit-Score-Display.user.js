@@ -75,6 +75,10 @@
         if (e.key === STORAGE_KEYS.AUTO_RELOAD_ENABLED || e.key === STORAGE_KEYS.AUTO_RELOAD_SECONDS) {
             applyAutoReloadPolicy(); // Перезапускаем автообновление при изменении настроек
         }
+        // Настройки звука тоже могут измениться
+        if (e.key === STORAGE_KEYS.SOUND) {
+            // Звуковые настройки обновятся автоматически при следующем вызове getSettings()
+        }
     });
 
     // === СОЗДАНИЕ КНОПКИ ===
@@ -294,6 +298,11 @@
 
     elements.sound.addEventListener('change', () => {
         localStorage.setItem(KEYS.SOUND, elements.sound.checked ? '1' : '0');
+        // Уведомляем основной скрипт об изменении настроек звука
+        if ('BroadcastChannel' in window) {
+            const channel = new BroadcastChannel('faceit-score');
+            channel.postMessage({ type: 'settingsChanged' });
+        }
     });
 
     elements.autoReload.addEventListener('change', () => {
