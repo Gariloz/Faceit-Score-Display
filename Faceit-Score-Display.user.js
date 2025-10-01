@@ -18,7 +18,7 @@
         AUTO_RELOAD_ENABLED: true,        // Включить автообновление страницы по умолчанию
         AUTO_RELOAD_SECONDS: 600,         // Интервал автообновления страницы (секунды)
         SOUND_URL: 'https://cdn-frontend.faceit-cdn.net/web-next/_next/static/media/found-tone-silly.mp3', // URL звука уведомления
-        UPDATE_INTERVAL: 100              // Частота обновления счета (миллисекунды) - всегда быстро для мгновенных уведомлений
+        UPDATE_INTERVAL: 1000             // Частота обновления счета (миллисекунды)
     };
 
     // === СЕЛЕКТОРЫ ДЛЯ ПОИСКА СЧЕТА ===
@@ -82,8 +82,17 @@
     let popupKeepAliveTimer = null;
     let autoReloadTimer = null;
 
+    // Создаем уникальный ID для вкладки (сохраняется при смене матчей)
+    const tabId = sessionStorage.getItem('faceit-tab-id') || 
+                  (() => {
+                      const id = `tab-${Date.now()}-${Math.random()}`;
+                      sessionStorage.setItem('faceit-tab-id', id);
+                      return id;
+                  })();
+    
+    const channelId = `faceit-score-${tabId}`;
     const scoreChannel = (typeof BroadcastChannel !== 'undefined') 
-        ? new BroadcastChannel('faceit-score') 
+        ? new BroadcastChannel(channelId) 
         : null;
 
     // Слушаем изменения настроек из попапа
@@ -231,7 +240,9 @@
     function broadcastScoreUpdate(scoreTeam1, scoreTeam2, fontSize) {
         try {
             scoreChannel?.postMessage({ type: 'update', scoreTeam1, scoreTeam2, fontSize });
-            localStorage.setItem(STORAGE_KEYS.SCORE_PAYLOAD, 
+            // Уникальный ключ для каждой вкладки
+            const uniquePayloadKey = `${STORAGE_KEYS.SCORE_PAYLOAD}-${channelId}`;
+            localStorage.setItem(uniquePayloadKey, 
                 JSON.stringify({ t: Date.now(), scoreTeam1, scoreTeam2, fontSize }));
         } catch {}
     }
@@ -309,6 +320,8 @@
         return `<script>
 (() => {
     const KEYS = ${JSON.stringify(STORAGE_KEYS)};
+    const CHANNEL_ID = '${channelId}';
+    const UNIQUE_PAYLOAD_KEY = KEYS.SCORE_PAYLOAD + '-' + CHANNEL_ID;
     
     const elements = {
         fontSize: document.getElementById('fontSizeInput'),
@@ -335,7 +348,7 @@
         localStorage.setItem(KEYS.SOUND, elements.sound.checked ? '1' : '0');
         // Уведомляем основной скрипт об изменении настроек звука
         if ('BroadcastChannel' in window) {
-            const channel = new BroadcastChannel('faceit-score');
+            const channel = new BroadcastChannel(CHANNEL_ID);
             channel.postMessage({ type: 'settingsChanged' });
         }
     });
@@ -344,7 +357,7 @@
         localStorage.setItem(KEYS.AUTO_RELOAD_ENABLED, elements.autoReload.checked ? '1' : '0');
         // Уведомляем основной скрипт об изменении настроек
         if ('BroadcastChannel' in window) {
-            const channel = new BroadcastChannel('faceit-score');
+            const channel = new BroadcastChannel(CHANNEL_ID);
             channel.postMessage({ type: 'settingsChanged' });
         }
     });
@@ -353,14 +366,14 @@
         localStorage.setItem(KEYS.AUTO_RELOAD_SECONDS, elements.autoReloadSec.value || '');
         // Уведомляем основной скрипт об изменении настроек
         if ('BroadcastChannel' in window) {
-            const channel = new BroadcastChannel('faceit-score');
+            const channel = new BroadcastChannel(CHANNEL_ID);
             channel.postMessage({ type: 'settingsChanged' });
         }
     });
 
     // BroadcastChannel для обновлений
     if ('BroadcastChannel' in window) {
-        const channel = new BroadcastChannel('faceit-score');
+        const channel = new BroadcastChannel(CHANNEL_ID);
         channel.addEventListener('message', (e) => {
             const data = e.data || {};
             if (data.type === 'update') {
@@ -377,7 +390,7 @@
 
     // Резервный канал через localStorage
     window.addEventListener('storage', (e) => {
-        if (e.key === KEYS.SCORE_PAYLOAD && e.newValue) {
+        if (e.key === UNIQUE_PAYLOAD_KEY && e.newValue) {
             try {
                 const data = JSON.parse(e.newValue);
                 if (data.fontSize !== undefined) {
