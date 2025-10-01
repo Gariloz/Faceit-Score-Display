@@ -61,6 +61,22 @@
         ? new BroadcastChannel('faceit-score') 
         : null;
 
+    // Слушаем изменения настроек из попапа
+    if (scoreChannel) {
+        scoreChannel.addEventListener('message', (e) => {
+            if (e.data.type === 'settingsChanged') {
+                applyAutoReloadPolicy(); // Перезапускаем автообновление с новыми настройками
+            }
+        });
+    }
+
+    // Резервный канал - слушаем изменения через localStorage
+    window.addEventListener('storage', (e) => {
+        if (e.key === STORAGE_KEYS.AUTO_RELOAD_ENABLED || e.key === STORAGE_KEYS.AUTO_RELOAD_SECONDS) {
+            applyAutoReloadPolicy(); // Перезапускаем автообновление при изменении настроек
+        }
+    });
+
     // === СОЗДАНИЕ КНОПКИ ===
     function createButton() {
         const button = document.createElement('button');
@@ -282,10 +298,20 @@
 
     elements.autoReload.addEventListener('change', () => {
         localStorage.setItem(KEYS.AUTO_RELOAD_ENABLED, elements.autoReload.checked ? '1' : '0');
+        // Уведомляем основной скрипт об изменении настроек
+        if ('BroadcastChannel' in window) {
+            const channel = new BroadcastChannel('faceit-score');
+            channel.postMessage({ type: 'settingsChanged' });
+        }
     });
 
     elements.autoReloadSec.addEventListener('input', () => {
         localStorage.setItem(KEYS.AUTO_RELOAD_SECONDS, elements.autoReloadSec.value || '');
+        // Уведомляем основной скрипт об изменении настроек
+        if ('BroadcastChannel' in window) {
+            const channel = new BroadcastChannel('faceit-score');
+            channel.postMessage({ type: 'settingsChanged' });
+        }
     });
 
     // BroadcastChannel для обновлений
