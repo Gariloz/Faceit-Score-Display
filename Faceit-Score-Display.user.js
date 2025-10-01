@@ -18,7 +18,7 @@
         AUTO_RELOAD_ENABLED: true,        // Включить автообновление страницы по умолчанию
         AUTO_RELOAD_SECONDS: 600,         // Интервал автообновления страницы (секунды)
         SOUND_URL: 'https://cdn-frontend.faceit-cdn.net/web-next/_next/static/media/found-tone-silly.mp3', // URL звука уведомления
-        UPDATE_INTERVAL: 1000             // Частота обновления счета (миллисекунды)
+        UPDATE_INTERVAL: 50               // Частота обновления счета (миллисекунды) - очень быстро!
     };
 
     // === СЕЛЕКТОРЫ ДЛЯ ПОИСКА СЧЕТА ===
@@ -77,8 +77,7 @@
     let lastScore = null;
     let isUpdating = false;
     let updateInterval = null;
-    let audioUnlocked = false;
-    let notificationAudio = null;
+    let fastCheckInterval = null;
     let popupKeepAliveTimer = null;
     let autoReloadTimer = null;
 
@@ -199,9 +198,24 @@
         const currentScore = `${scoreTeam1}-${scoreTeam2}`;
 
         // Проверяем изменение счета для звукового уведомления
-        if (currentScore !== lastScore && playSound) {
+        const scoreChanged = currentScore !== lastScore;
+        if (scoreChanged && playSound) {
             lastScore = currentScore;
-            playNotificationSound();
+            // Отправляем сигнал о воспроизведении звука в попап
+            if (isPopupAlive()) {
+                try {
+                    scoreWindow.postMessage({ type: 'playSound' }, '*');
+                } catch {}
+            }
+            
+            // Дополнительно отправляем сигнал звука через BroadcastChannel
+            if (scoreChannel) {
+                try {
+                    scoreChannel.postMessage({ type: 'playSound' });
+                } catch {}
+            }
+        } else if (scoreChanged) {
+            lastScore = currentScore;
         }
 
         // Обновляем попап если он открыт
@@ -373,8 +387,56 @@
                     elements.score.textContent = data.scoreTeam1 + ' - ' + data.scoreTeam2;
                 }
             }
+            if (data.type === 'playSound') {
+                playNotificationSound();
+            }
         });
     }
+
+    // Обработка звуковых уведомлений в попапе
+    let notificationAudio = null;
+    let audioUnlocked = false;
+
+    function playNotificationSound() {
+        // Принудительно разблокируем звук при каждом воспроизведении
+        unlockAudio();
+        
+        try {
+            // Создаем новый Audio объект каждый раз для надежности
+            const audio = new Audio('${CONFIG.SOUND_URL}');
+            audio.currentTime = 0;
+            audio.play().catch(() => {});
+        } catch {}
+    }
+
+    function unlockAudio() {
+        try {
+            if (!notificationAudio) {
+                notificationAudio = new Audio('${CONFIG.SOUND_URL}');
+            }
+            notificationAudio.muted = true;
+            notificationAudio.play().then(() => {
+                notificationAudio.pause();
+                notificationAudio.muted = false;
+                audioUnlocked = true;
+            }).catch(() => {});
+        } catch {}
+    }
+
+    // Слушаем сообщения от родительского окна
+    window.addEventListener('message', (e) => {
+        if (e.data.type === 'playSound') {
+            playNotificationSound();
+        }
+    });
+
+    // Разблокируем звук при первом взаимодействии с попапом
+    document.addEventListener('click', unlockAudio, { once: true });
+    document.addEventListener('keydown', unlockAudio, { once: true });
+    
+    // Автоматическая разблокировка при загрузке попапа
+    unlockAudio();
+
 
     // Резервный канал через localStorage
     window.addEventListener('storage', (e) => {
@@ -438,32 +500,6 @@
         } catch {}
     }
 
-    // === ЗВУКОВЫЕ УВЕДОМЛЕНИЯ ===
-    function playNotificationSound() {
-        if (!audioUnlocked) return;
-        
-        try {
-            if (!notificationAudio) {
-                notificationAudio = new Audio(CONFIG.SOUND_URL);
-            }
-            notificationAudio.currentTime = 0;
-            notificationAudio.play().catch(() => {});
-        } catch {}
-    }
-
-    function unlockAudio() {
-        try {
-            if (!notificationAudio) {
-                notificationAudio = new Audio(CONFIG.SOUND_URL);
-            }
-            notificationAudio.muted = true;
-            notificationAudio.play().then(() => {
-                notificationAudio.pause();
-                notificationAudio.muted = false;
-                audioUnlocked = true;
-            }).catch(() => {});
-        } catch {}
-    }
 
     // === ОБНОВЛЕНИЕ СЧЕТА ===
     function updateScore() {
@@ -478,11 +514,21 @@
 
     function startUpdateInterval() {
         clearInterval(updateInterval);
+        clearInterval(fastCheckInterval);
+        
         updateInterval = setInterval(updateScore, CONFIG.UPDATE_INTERVAL);
+        
+        // Дополнительная быстрая проверка для максимальной отзывчивости
+        fastCheckInterval = setInterval(() => {
+            if (document.querySelector(SELECTORS.SCORE_ELEMENTS[0])) {
+                updateScore();
+            }
+        }, 10);
     }
 
     function stopUpdateInterval() {
         clearInterval(updateInterval);
+        clearInterval(fastCheckInterval);
     }
 
     // === ОБРАБОТЧИКИ СОБЫТИЙ ===
@@ -495,7 +541,6 @@
         ensurePopupContent();
         startUpdateInterval();
         startPopupKeepAlive();
-        unlockAudio();
     }
 
     function handleVisibilityChange() {
