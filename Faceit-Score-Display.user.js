@@ -18,8 +18,7 @@
         AUTO_RELOAD_ENABLED: true,        // Включить автообновление страницы по умолчанию
         AUTO_RELOAD_SECONDS: 600,         // Интервал автообновления страницы (секунды)
         SOUND_URL: 'https://cdn-frontend.faceit-cdn.net/web-next/_next/static/media/found-tone-silly.mp3', // URL звука уведомления
-        UPDATE_INTERVAL: 100,             // Частота обновления счета когда вкладка активна (миллисекунды)
-        INACTIVE_INTERVAL: 1000           // Частота обновления счета когда вкладка неактивна (миллисекунды)
+        UPDATE_INTERVAL: 100              // Частота обновления счета (миллисекунды) - всегда быстро для мгновенных уведомлений
     };
 
     // === СЕЛЕКТОРЫ ДЛЯ ПОИСКА СЧЕТА ===
@@ -499,12 +498,9 @@
     }
 
     function handleVisibilityChange() {
-        if (document.visibilityState === 'visible') {
-            startUpdateInterval();
-        } else {
-            stopUpdateInterval();
-            updateInterval = setInterval(updateScore, CONFIG.INACTIVE_INTERVAL);
-        }
+        // Всегда обновляем быстро для мгновенных уведомлений!
+        // Неважно активна вкладка или нет - главное не пропустить изменение счета
+        startUpdateInterval();
     }
 
     function handleDOMChanges() {
