@@ -79,6 +79,7 @@
     let updateInterval = null;
     let fastCheckInterval = null;
     let popupKeepAliveTimer = null;
+    let lastSoundScore = null; // Последний счет, для которого был воспроизведен звук
     let autoReloadTimer = null;
 
     // Простой общий канал - как было изначально, но работает идеально
@@ -91,6 +92,7 @@
         scoreChannel.addEventListener('message', (e) => {
             if (e.data.type === 'settingsChanged') {
                 applyAutoReloadPolicy(); // Перезапускаем автообновление с новыми настройками
+                lastSoundScore = null; // Сбрасываем состояние звука
             }
         });
     }
@@ -199,19 +201,21 @@
 
         // Проверяем изменение счета для звукового уведомления
         const scoreChanged = currentScore !== lastScore;
-        if (scoreChanged && playSound) {
+        if (scoreChanged && playSound && currentScore !== lastSoundScore) {
             lastScore = currentScore;
+            lastSoundScore = currentScore; // Запоминаем счет для которого воспроизвели звук
+            
             // Отправляем сигнал о воспроизведении звука в попап
             if (isPopupAlive()) {
                 try {
-                    scoreWindow.postMessage({ type: 'playSound' }, '*');
+                    scoreWindow.postMessage({ type: 'playSound', score: currentScore }, '*');
                 } catch {}
             }
             
             // Дополнительно отправляем сигнал звука через BroadcastChannel
             if (scoreChannel) {
                 try {
-                    scoreChannel.postMessage({ type: 'playSound' });
+                    scoreChannel.postMessage({ type: 'playSound', score: currentScore });
                 } catch {}
             }
         } else if (scoreChanged) {
@@ -348,6 +352,8 @@
 
     elements.sound.addEventListener('change', () => {
         localStorage.setItem(KEYS.SOUND, elements.sound.checked ? '1' : '0');
+        // Сбрасываем состояние звука при изменении настройки
+        lastPlayedScore = null;
         // Уведомляем основной скрипт об изменении настроек звука
         if ('BroadcastChannel' in window) {
             const channel = new BroadcastChannel('faceit-score');
@@ -387,7 +393,8 @@
                     elements.score.textContent = data.scoreTeam1 + ' - ' + data.scoreTeam2;
                 }
             }
-            if (data.type === 'playSound') {
+            if (data.type === 'playSound' && data.score && data.score !== lastPlayedScore) {
+                lastPlayedScore = data.score;
                 playNotificationSound();
             }
         });
@@ -396,46 +403,108 @@
     // Обработка звуковых уведомлений в попапе
     let notificationAudio = null;
     let audioUnlocked = false;
+    let lastPlayedScore = null; // Последний счет для которого воспроизвели звук
 
     function playNotificationSound() {
-        // Принудительно разблокируем звук при каждом воспроизведении
-        unlockAudio();
-        
         try {
-            // Создаем новый Audio объект каждый раз для надежности
+            // Создаем новый Audio объект каждый раз для мгновенного воспроизведения
             const audio = new Audio('${CONFIG.SOUND_URL}');
+            audio.preload = 'auto';
             audio.currentTime = 0;
-            audio.play().catch(() => {});
-        } catch {}
+            audio.volume = 1.0;
+            
+            // Пробуем воспроизвести
+            const playPromise = audio.play();
+            
+            if (playPromise !== undefined) {
+                playPromise.catch((error) => {
+                    // Если заблокировано, разблокируем и пробуем снова
+                    if (error.name === 'NotAllowedError') {
+                        unlockAudio();
+                        // Пробуем еще раз после разблокировки
+                        audio.play().catch(() => {});
+                    }
+                });
+            }
+        } catch (error) {
+            // Если что-то пошло не так, пробуем разблокировать
+            unlockAudio();
+        }
     }
 
     function unlockAudio() {
         try {
             if (!notificationAudio) {
                 notificationAudio = new Audio('${CONFIG.SOUND_URL}');
+                notificationAudio.preload = 'auto';
             }
+            
+            // Если уже разблокирован, не делаем повторно
+            if (audioUnlocked) return;
+            
             notificationAudio.muted = true;
+            notificationAudio.volume = 0.01;
+            notificationAudio.currentTime = 0;
+            
             notificationAudio.play().then(() => {
                 notificationAudio.pause();
                 notificationAudio.muted = false;
+                notificationAudio.volume = 1.0;
                 audioUnlocked = true;
-            }).catch(() => {});
+            }).catch(() => {
+                // Если не удалось разблокировать, пробуем еще раз
+                audioUnlocked = false;
+            });
         } catch {}
     }
 
     // Слушаем сообщения от родительского окна
     window.addEventListener('message', (e) => {
-        if (e.data.type === 'playSound') {
+        if (e.data.type === 'playSound' && e.data.score && e.data.score !== lastPlayedScore) {
+            lastPlayedScore = e.data.score;
             playNotificationSound();
         }
     });
+
+    // Слушаем BroadcastChannel для звука
+    if ('BroadcastChannel' in window) {
+        const soundChannel = new BroadcastChannel('faceit-score');
+        soundChannel.addEventListener('message', (e) => {
+            if (e.data.type === 'playSound' && e.data.score && e.data.score !== lastPlayedScore) {
+                lastPlayedScore = e.data.score;
+                playNotificationSound();
+            }
+        });
+    }
 
     // Разблокируем звук при первом взаимодействии с попапом
     document.addEventListener('click', unlockAudio, { once: true });
     document.addEventListener('keydown', unlockAudio, { once: true });
     
-    // Автоматическая разблокировка при загрузке попапа
+    // Автоматическая разблокировка и предзагрузка при загрузке попапа
     unlockAudio();
+    
+    // Предзагружаем звук для мгновенного воспроизведения
+    try {
+        const preloadAudio = new Audio('${CONFIG.SOUND_URL}');
+        preloadAudio.preload = 'auto';
+        preloadAudio.load();
+        
+        // Пробуем разблокировать через предзагрузку
+        preloadAudio.muted = true;
+        preloadAudio.volume = 0.01;
+        preloadAudio.play().then(() => {
+            preloadAudio.pause();
+            audioUnlocked = true;
+        }).catch(() => {});
+    } catch {}
+    
+    // Дополнительная разблокировка через небольшую задержку
+    setTimeout(() => {
+        if (!audioUnlocked) {
+            unlockAudio();
+        }
+    }, 100);
 
 
     // Резервный канал через localStorage
