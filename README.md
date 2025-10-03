@@ -6,10 +6,11 @@
 
 * Display live match scores in a separate popup window
 * Customizable font size for score display
-* Sound notifications when score changes
+* Instant sound notifications when score changes
 * Auto-reload page functionality with configurable intervals
 * Settings persistence across browser sessions
 * Works on all FACEIT pages (*.faceit.com)
+* Reliable multi-channel communication system
 
 ## Installation
 
@@ -34,6 +35,10 @@
 * Better error handling
 * Modern JavaScript syntax
 * Comprehensive configuration options
+* Instant sound notifications with zero delays
+* Triple audio unlock system for guaranteed playback
+* Dual communication channels (postMessage + BroadcastChannel)
+* Enhanced audio error recovery and retry mechanisms
 
 ## GitHub
 
