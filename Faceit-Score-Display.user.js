@@ -361,8 +361,7 @@
             if (e.data.type === 'buttonUpdate') {
                 const button = document.querySelector('button[style*="position: fixed"]');
                 if (button && e.data.text && e.data.color) {
-                    button.textContent = e.data.text;
-                    button.style.backgroundColor = e.data.color;
+                    updateButtonText(e.data.text, e.data.color, button);
                 }
             }
             
@@ -1024,11 +1023,63 @@
         if (!btn) return;
         
         const buttonText = btn.querySelector('span:last-child');
-        const eyeIcon = btn.querySelector('span:first-child');
+        let eyeIcon = btn.querySelector('span:first-child');
         
-        if (buttonText) {
-            buttonText.textContent = text;
+        // Если глазик отсутствует, создаем его заново
+        if (!eyeIcon || !eyeIcon._updateColor) {
+            // Сохраняем старый текст перед очисткой
+            const oldText = btn.textContent || text || 'Показать счет';
+            
+            // Удаляем все дочерние элементы, но сохраняем обработчики событий на самой кнопке
+            while (btn.firstChild) {
+                btn.removeChild(btn.firstChild);
+            }
+            
+            // Создаем новый глазик
+            eyeIcon = document.createElement('span');
+            eyeIcon.innerHTML = '👁️';
+            const isActive = backgroundColor === '#f44336'; // Красный = активен
+            eyeIcon.style.cssText = `font-size: ${CONFIG.EYE_ICON_SIZE}; cursor: pointer; padding: ${CONFIG.EYE_ICON_PADDING}; background-color: ${isActive ? CONFIG.EYE_ICON_BG_COLOR_ACTIVE : CONFIG.EYE_ICON_BG_COLOR_INACTIVE}; border: ${CONFIG.EYE_ICON_BORDER}; border-radius: ${CONFIG.EYE_ICON_BORDER_RADIUS}; display: inline-flex; align-items: center; justify-content: center; transition: all 0.2s; flex-shrink: 0;`;
+            eyeIcon.title = 'Скрыть кнопку';
+            let originalBgColor = isActive ? CONFIG.EYE_ICON_BG_COLOR_ACTIVE : CONFIG.EYE_ICON_BG_COLOR_INACTIVE;
+            eyeIcon.addEventListener('mouseenter', () => {
+                eyeIcon.style.backgroundColor = CONFIG.EYE_ICON_BG_HOVER;
+                eyeIcon.style.borderColor = CONFIG.EYE_ICON_BORDER_HOVER;
+            });
+            eyeIcon.addEventListener('mouseleave', () => {
+                eyeIcon.style.backgroundColor = originalBgColor;
+                const borderParts = CONFIG.EYE_ICON_BORDER.split(' ');
+                eyeIcon.style.borderColor = borderParts.slice(2).join(' ');
+            });
+            eyeIcon._updateColor = function(active) {
+                originalBgColor = active ? CONFIG.EYE_ICON_BG_COLOR_ACTIVE : CONFIG.EYE_ICON_BG_COLOR_INACTIVE;
+                eyeIcon.style.backgroundColor = originalBgColor;
+            };
+            eyeIcon.addEventListener('click', (e) => {
+                e.stopPropagation();
+                hideMainButton();
+            });
+            
+            // Создаем новый текст
+            const newButtonText = document.createElement('span');
+            newButtonText.textContent = text || oldText;
+            newButtonText.style.cssText = 'white-space: nowrap;';
+            
+            btn.appendChild(eyeIcon);
+            btn.appendChild(newButtonText);
+        } else {
+            // Глазик есть, просто обновляем текст
+            if (buttonText) {
+                buttonText.textContent = text;
+            } else if (text) {
+                // Если текст отсутствует, создаем его
+                const newButtonText = document.createElement('span');
+                newButtonText.textContent = text;
+                newButtonText.style.cssText = 'white-space: nowrap;';
+                btn.appendChild(newButtonText);
+            }
         }
+        
         if (backgroundColor) {
             btn.style.backgroundColor = backgroundColor;
             // Обновляем цвет иконки глаза в зависимости от цвета кнопки
@@ -2143,8 +2194,7 @@
                 
                 const button = document.querySelector('button[style*="position: fixed"]');
                 if (button) {
-                    button.textContent = 'Показать счет';
-                    button.style.backgroundColor = '#4CAF50';
+                    updateButtonText('Показать счет', '#4CAF50', button);
                 }
                 
                 if (scoreChannel) {
@@ -2166,8 +2216,7 @@
                         
                         const button = document.querySelector('button[style*="position: fixed"]');
                         if (button) {
-                            button.textContent = 'Показать счет';
-                            button.style.backgroundColor = '#4CAF50';
+                            updateButtonText('Показать счет', '#4CAF50', button);
                         }
                         
                         if (scoreChannel) {
