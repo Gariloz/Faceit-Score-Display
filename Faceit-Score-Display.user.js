@@ -1038,8 +1038,27 @@
             }
         }
         
+        // Проверяем, скрыта ли кнопка, и соответственно показываем/скрываем hideButton
+        // Используем состояние из localStorage как основной источник истины
+        const buttonVisible = loadButtonVisibility();
+        const isButtonHidden = !buttonVisible || btn.style.display === 'none';
+        
+        if (isButtonHidden) {
+            // Кнопка скрыта, нужно показать hideButton если его нет или он скрыт
+            if (!hideButton) {
+                hideButton = createHideButton();
+            } else {
+                hideButton.style.display = 'flex';
+            }
+        } else {
+            // Кнопка видна, hideButton должен быть скрыт
+            if (hideButton) {
+                hideButton.style.display = 'none';
+            }
+        }
+        
         // Обновляем цвет скрытой иконки, если она есть
-        if (hideButton) {
+        if (hideButton && backgroundColor) {
             const isActive = backgroundColor === '#f44336'; // Красный = активен
             updateHideButtonColor(isActive);
         }
