@@ -328,7 +328,9 @@
             }
             
             if (e.data.type === 'requestTimeUpdate') {
-                updateScore();
+                if (isScriptActive) {
+                    updateScore();
+                }
             }
             
             if (e.data.type === 'checkPopupAlive') {
@@ -338,23 +340,51 @@
             }
             
             if (e.data.type === 'popupAlive') {
-                if (!isScriptActive && isPopupAliveViaStorage()) {
-                    isScriptActive = true;
-                    localStorage.setItem(STORAGE_KEYS.SCRIPT_ACTIVE, '1');
-                    
-                    const button = document.querySelector('button[style*="position: fixed"]');
-                    if (button) {
-                        updateButtonText('Скрыть счет', '#f44336');
+                // Проверяем, действительно ли popup открыт
+                try {
+                    const testPopup = window.open('', 'ScoreWindow');
+                    if (testPopup && !testPopup.closed) {
+                        if (!isScriptActive) {
+                            scoreWindow = testPopup;
+                            isScriptActive = true;
+                            localStorage.setItem(STORAGE_KEYS.SCRIPT_ACTIVE, '1');
+                            
+                            const button = document.querySelector('button[style*="position: fixed"]');
+                            if (button) {
+                                updateButtonText('Скрыть счет', '#f44336');
+                            }
+                            
+                            startUpdateInterval();
+                            startPopupKeepAlive();
+                            
+                            setTimeout(() => {
+                                startInactiveTabMonitoring();
+                                startAggressiveMonitoring();
+                                startAllAdvancedTricks();
+                            }, 100);
+                        }
+                    } else {
+                        // Popup закрыт - очищаем флаги
+                        if (testPopup) testPopup.close();
+                        localStorage.removeItem(STORAGE_KEYS.POPUP_ALIVE);
+                        localStorage.removeItem(STORAGE_KEYS.SCRIPT_ACTIVE);
+                        if (isScriptActive) {
+                            isScriptActive = false;
+                            stopUpdateInterval();
+                            const button = document.querySelector('button[style*="position: fixed"]');
+                            if (button) {
+                                updateButtonText('Показать счет', '#4CAF50');
+                            }
+                        }
                     }
-                    
-                    startUpdateInterval();
-                    startPopupKeepAlive();
-                    
-                    setTimeout(() => {
-                        startInactiveTabMonitoring();
-                        startAggressiveMonitoring();
-                        startAllAdvancedTricks();
-                    }, 100);
+                } catch {
+                    // Ошибка - очищаем флаги
+                    localStorage.removeItem(STORAGE_KEYS.POPUP_ALIVE);
+                    localStorage.removeItem(STORAGE_KEYS.SCRIPT_ACTIVE);
+                    if (isScriptActive) {
+                        isScriptActive = false;
+                        stopUpdateInterval();
+                    }
                 }
             }
             
@@ -448,15 +478,11 @@
             
             // Способ 1: Ищем в #tooltip-portal (где находятся активные тултипы)
             const tooltipPortal = document.getElementById('tooltip-portal');
-            console.log('[Faceit Score] Tooltip portal найден:', !!tooltipPortal);
             if (tooltipPortal) {
                 const portalTooltips = tooltipPortal.querySelectorAll('[role="tooltip"], [class*="TooltipHolder"], [class*="TooltipContent"]');
-                console.log('[Faceit Score] Найдено тултипов в портале:', portalTooltips.length);
                 for (const t of portalTooltips) {
                     const text = t.textContent || '';
-                    console.log('[Faceit Score] Текст тултипа:', text.substring(0, 100));
                     if (text.includes('Started at') && text.includes('Finished at')) {
-                        console.log('[Faceit Score] ✓ Нашли тултип с временем в портале!');
                         tooltip = t;
                         break;
                     }
@@ -504,30 +530,22 @@
             }
             
             if (!tooltip) {
-                console.log('[Faceit Score] ✗ Тултип не найден нигде');
                 return null;
             }
             
             const tooltipText = tooltip.textContent || '';
-            console.log('[Faceit Score] Полный текст тултипа:', tooltipText);
             const startMatch = tooltipText.match(/Started at.*?(\d{2}):(\d{2})/);
             const finishMatch = tooltipText.match(/Finished at.*?(\d{2}):(\d{2})/);
             
-            console.log('[Faceit Score] startMatch:', startMatch);
-            console.log('[Faceit Score] finishMatch:', finishMatch);
-            
             if (startMatch && finishMatch) {
                 const duration = calculateDuration(startMatch, finishMatch);
-                console.log('[Faceit Score] ✓ Вычисленная длительность:', duration);
                 if (duration) {
                     // Нашли время - продолжаем наводиться для других матчей
                 }
                 return duration;
-            } else {
-                console.log('[Faceit Score] ✗ Regex не нашел совпадений в тексте');
             }
         } catch (e) {
-            console.error('[Faceit Score] Ошибка в parseMatchDuration:', e);
+            // Игнорируем ошибки
         }
         
         return null;
@@ -566,11 +584,8 @@
         
         const tooltipPortal = document.getElementById('tooltip-portal');
         if (!tooltipPortal) {
-            console.log('[Faceit Score] tooltip-portal не найден для наблюдения');
             return;
         }
-        
-        console.log('[Faceit Score] Запущен MutationObserver на tooltip-portal');
         
         tooltipObserver = new MutationObserver((mutations) => {
             if (!isScriptActive) return; // Не работаем если скрипт неактивен
@@ -582,13 +597,11 @@
                     for (const tooltip of tooltips) {
                         const text = tooltip.textContent;
                         if (text.includes('Started at') && text.includes('Finished at')) {
-                            console.log('[Faceit Score] ✓ MutationObserver обнаружил тултип!');
                             const startMatch = text.match(/Started at.*?(\d{2}):(\d{2})/);
                             const finishMatch = text.match(/Finished at.*?(\d{2}):(\d{2})/);
                             
                             if (startMatch && finishMatch) {
                                 const duration = calculateDuration(startMatch, finishMatch);
-                                console.log('[Faceit Score] ✓ Автоматически вычислено время:', duration);
                                 if (duration) {
                                     // Обновляем popup
                                     setTimeout(() => {
@@ -622,7 +635,6 @@
         if (tooltipObserver) {
             tooltipObserver.disconnect();
             tooltipObserver = null;
-            console.log('[Faceit Score] MutationObserver остановлен');
         }
     }
     
@@ -694,14 +706,12 @@
                         trigger.dispatchEvent(event);
                     }
                     
-                    console.log('[Faceit Score] 🤖 Отправлено', events.length, 'событий на:', trigger.tagName);
-                    
                         // КРИТИЧНО: Делаем break после ПЕРВОГО элемента "Finished"!
                     break; // Останавливаемся на первом элементе, чтобы не создавать дубликаты
                 }
             }
             } catch (e) {
-                console.error('[Faceit Score] Ошибка автоматического наведения:', e);
+                // Игнорируем ошибки
             }
         };
         
@@ -713,14 +723,11 @@
     }
     
     function tryToRevealTooltip() {
-        console.log('[Faceit Score] tryToRevealTooltip() вызвана');
-        
         try {
             // Сначала ищем в #tooltip-portal (где находятся активные тултипы)
             const tooltipPortal = document.getElementById('tooltip-portal');
             if (tooltipPortal) {
                 const portalTooltips = tooltipPortal.querySelectorAll('[role="tooltip"], [class*="TooltipHolder"], [class*="TooltipContent"]');
-                console.log('[Faceit Score] tryToReveal: найдено тултипов в портале:', portalTooltips.length);
                 for (const tooltip of portalTooltips) {
                     const text = tooltip.textContent;
                     if (text.includes('Started at') && text.includes('Finished at')) {
@@ -764,14 +771,9 @@
             
             // Если не нашли - пытаемся вызвать тултип наведением
             const holders = document.querySelectorAll('.Tooltip__Holder-sc-1f7e13b3-0');
-            console.log('[Faceit Score] Найдено Tooltip__Holder элементов:', holders.length);
             for (const holder of holders) {
                 const trigger = holder.querySelector('.Tooltip__TriggerContainer-sc-1f7e13b3-2');
-                if (trigger) {
-                    console.log('[Faceit Score] Trigger текст:', trigger.textContent.trim());
-                }
                 if (trigger && trigger.textContent.trim().toLowerCase() === 'finished') {
-                    console.log('[Faceit Score] ✓ Нашли элемент "Finished", симулируем наведение');
                     
                     // Получаем координаты элемента
                     const rect = trigger.getBoundingClientRect();
@@ -800,7 +802,6 @@
                     // Несколько проверок с увеличивающейся задержкой
                     const checkForTooltip = (delay) => {
                         setTimeout(() => {
-                            console.log(`[Faceit Score] Проверка тултипа через ${delay}ms`);
                             // Сначала проверяем #tooltip-portal
                             const tooltipPortal = document.getElementById('tooltip-portal');
                             if (tooltipPortal) {
@@ -813,7 +814,6 @@
                                         
                                         if (startMatch && finishMatch) {
                                             const duration = calculateDuration(startMatch, finishMatch);
-                                            console.log('[Faceit Score] ✓ Нашли время после симуляции (портал):', duration);
                                             if (duration) {
                                                 stopAutoHover();
                                                 return;
@@ -824,7 +824,6 @@
                             }
                             
                             // Если не нашли в портале, ищем везде
-                            console.log('[Faceit Score] Ищем везде после симуляции');
                             const tooltips = document.querySelectorAll(
                                 '[role="tooltip"], ' +
                                 '.TooltipContent__BaseContainer-sc-692903b7-0, ' +
@@ -1766,11 +1765,9 @@
                 // Запускаем MutationObserver для автоматического чтения
                 startTooltipObserver();
                 
-                // Запускаем СУПЕР АГРЕССИВНЫЙ мониторинг tooltip-portal (каждые 100м-distance!)
+                // Запускаем СУПЕР АГРЕССИВНЫЙ мониторинг tooltip-portal (каждые 100мс!)
                 if (!tooltipCheckTimer) {
                     let attempts = 0;
-                    console.log('[Faceit Score] 🚀 ЗАПУСК СУПЕР АГРЕССИВНОГО мониторинга (каждые 100мс!)');
-                    console.log('[Faceit Score] MutationObserver + AutoHover + Direct Portal Scan!');
                     
                     tooltipCheckTimer = setInterval(() => {
                         if (!isScriptActive) return; // Не работаем если скрипт неактивен
@@ -1790,13 +1787,11 @@
                             for (const tooltip of portalTooltips) {
                                 const text = tooltip.textContent || '';
                                 if (text.includes('Started at') && text.includes('Finished at')) {
-                                    console.log('[Faceit Score] 🔥 НАШЛИ В ПОРТАЛЕ!', text);
                                     const startMatch = text.match(/Started at.*?(\d{2}):(\d{2})/);
                                     const finishMatch = text.match(/Finished at.*?(\d{2}):(\d{2})/);
                                     
                                     if (startMatch && finishMatch) {
                                         const duration = calculateDuration(startMatch, finishMatch);
-                                        console.log('[Faceit Score] ✓✓✓ ВЫЧИСЛИЛИ:', duration);
                                         if (duration) {
                                             // Обновляем popup СО СВЕЖИМИ значениями!
                                             const settings = getSettings();
@@ -1813,7 +1808,6 @@
                         
                         // Продолжаем мониторинг навсегда!
                         if (attempts > 600) { // 60 секунд (600 * 100мс)
-                            console.log('[Faceit Score] ⚠ 60 секунд прошло, продолжаем мониторинг...');
                             attempts = 0; // Сбрасываем счетчик, но продолжаем работать
                         }
                     }, 100); // КАЖДЫЕ 100 МС!
@@ -1997,12 +1991,13 @@
 
     const savedFontSize = localStorage.getItem(KEYS.FONT_SIZE);
     const savedAutoReloadSec = localStorage.getItem(KEYS.AUTO_RELOAD_SECONDS);
+    const savedAutoReloadEnabled = localStorage.getItem(KEYS.AUTO_RELOAD_ENABLED);
 
     elements.fontSize.value = String(savedFontSize ?? '60');
     elements.sound.checked = false;
     localStorage.setItem(KEYS.SOUND, '0');
-    elements.autoReload.checked = false;
-    elements.autoReloadSec.value = String(savedAutoReloadSec ?? '600');
+    elements.autoReload.checked = savedAutoReloadEnabled === '1';
+    elements.autoReloadSec.value = String(savedAutoReloadSec ?? '300');
     elements.score.style.fontSize = (elements.fontSize.value || '60') + 'px';
 
     localStorage.setItem(KEYS.POPUP_ALIVE, '1');
@@ -2041,6 +2036,7 @@
     });
 
     elements.autoReload.addEventListener('change', () => {
+        localStorage.setItem(KEYS.AUTO_RELOAD_ENABLED, elements.autoReload.checked ? '1' : '0');
         if ('BroadcastChannel' in window) {
             const channel = new BroadcastChannel('faceit-score');
             channel.postMessage({ type: 'settingsChanged' });
@@ -2322,11 +2318,14 @@
     }
 
     function startUpdateInterval() {
+        if (!isScriptActive) return; // КРИТИЧНО: не запускаем если скрипт неактивен
+        
         clearInterval(updateInterval);
         clearInterval(fastCheckInterval);
         
         // Проверяем при старте есть ли завершенный матч
         setTimeout(() => {
+            if (!isScriptActive) return; // Проверяем активность
             const { timeElement } = findScores();
             if (timeElement) {
                 const matchTime = timeElement.textContent.trim();
@@ -2340,11 +2339,22 @@
             }
         }, 0);
         
-        updateInterval = setInterval(updateScore, CONFIG.UPDATE_INTERVAL);
-        fastCheckInterval = setInterval(() => {
-            if (isScriptActive) {
-                updateScore();
+        updateInterval = setInterval(() => {
+            if (!isScriptActive) {
+                clearInterval(updateInterval);
+                updateInterval = null;
+                return;
             }
+            updateScore();
+        }, CONFIG.UPDATE_INTERVAL);
+        
+        fastCheckInterval = setInterval(() => {
+            if (!isScriptActive) {
+                clearInterval(fastCheckInterval);
+                fastCheckInterval = null;
+                return;
+            }
+            updateScore();
         }, CONFIG.FAST_CHECK_INTERVAL);
     }
 
@@ -2354,6 +2364,14 @@
         clearInterval(urlTrackingInterval);
         clearInterval(tooltipCheckTimer);
         clearInterval(autoReloadTimer);
+        
+        // Устанавливаем все интервалы в null для полной остановки
+        updateInterval = null;
+        fastCheckInterval = null;
+        urlTrackingInterval = null;
+        tooltipCheckTimer = null;
+        autoReloadTimer = null;
+        
         stopInactiveTabMonitoring();
         stopAllAdvancedTricks();
         stopTooltipObserver();
@@ -2376,6 +2394,7 @@
 
     function applyAutoReloadPolicy() {
         clearInterval(autoReloadTimer);
+        autoReloadTimer = null;
         try {
             const enabled = localStorage.getItem(STORAGE_KEYS.AUTO_RELOAD_ENABLED) === '1';
             const seconds = Number(localStorage.getItem(STORAGE_KEYS.AUTO_RELOAD_SECONDS) || '0');
@@ -2385,9 +2404,14 @@
                 autoReloadTimer = setInterval(() => {
                     if (!isScriptActive) {
                         clearInterval(autoReloadTimer);
+                        autoReloadTimer = null;
                         return;
                     }
-                    location.reload();
+                    const currentUrl = window.location.href;
+                    const isMatchPage = CONFIG.MATCH_URL_PATTERNS.some(pattern => currentUrl.includes(pattern));
+                    if (isMatchPage) {
+                        location.reload();
+                    }
                 }, ms);
             }
         } catch {}
@@ -2482,12 +2506,16 @@
         if (!urlTrackingInterval) {
             let lastUrl = window.location.href;
             urlTrackingInterval = setInterval(() => {
-                if (!isScriptActive) return; // Не работаем если скрипт неактивен
+                if (!isScriptActive) {
+                    clearInterval(urlTrackingInterval);
+                    urlTrackingInterval = null;
+                    return;
+                }
                 
                 const currentUrl = window.location.href;
                 if (currentUrl !== lastUrl) {
                     lastUrl = currentUrl;
-                    if (isPopupAlive()) {
+                    if (isPopupAlive() && isScriptActive) {
                         const settings = getSettings();
                         sendScoreToPopup(settings.fontSize, settings.soundEnabled);
                     }
@@ -2511,19 +2539,67 @@
         button = createButton();
         button.addEventListener('click', handleButtonClick);
         
-        if (isPopupAliveViaStorage()) {
-            isScriptActive = true;
-            localStorage.setItem(STORAGE_KEYS.SCRIPT_ACTIVE, '1');
-            updateButtonText('Скрыть счет', '#f44336');
-            
-        startUpdateInterval();
-            startPopupKeepAlive();
-            
-            setTimeout(() => {
-                startInactiveTabMonitoring();
-                startAggressiveMonitoring();
-                startAllAdvancedTricks();
-            }, 100);
+        // КРИТИЧНО: НЕ запускаем скрипт автоматически при инициализации!
+        // Скрипт должен запускаться ТОЛЬКО когда пользователь нажимает кнопку "Показать счет"
+        // Проверяем только состояние кнопки из localStorage
+        const savedScriptActive = localStorage.getItem(STORAGE_KEYS.SCRIPT_ACTIVE);
+        const popupAlive = isPopupAliveViaStorage();
+        
+        // Если popup действительно открыт И скрипт был активен - проверяем popup еще раз
+        if (popupAlive && savedScriptActive === '1') {
+            // Проверяем, действительно ли popup открыт (может быть закрыт в другой вкладке)
+            try {
+                const testPopup = window.open('', 'ScoreWindow');
+                if (testPopup && !testPopup.closed) {
+                    // Popup действительно открыт - активируем скрипт
+                    scoreWindow = testPopup;
+                    isScriptActive = true;
+                    updateButtonText('Скрыть счет', '#f44336');
+                    startUpdateInterval();
+                    startPopupKeepAlive();
+                    setTimeout(() => {
+                        startInactiveTabMonitoring();
+                        startAggressiveMonitoring();
+                        startAllAdvancedTricks();
+                    }, 100);
+                    
+                    let lastUrl = window.location.href;
+                    urlTrackingInterval = setInterval(() => {
+                        if (!isScriptActive) {
+                            clearInterval(urlTrackingInterval);
+                            urlTrackingInterval = null;
+                            return;
+                        }
+                        const currentUrl = window.location.href;
+                        if (currentUrl !== lastUrl) {
+                            lastUrl = currentUrl;
+                            if (isPopupAlive()) {
+                                const settings = getSettings();
+                                sendScoreToPopup(settings.fontSize, settings.soundEnabled);
+                            }
+                        }
+                    }, 100);
+                    applyAutoReloadPolicy();
+                } else {
+                    // Popup закрыт - очищаем флаги
+                    if (testPopup) testPopup.close();
+                    localStorage.removeItem(STORAGE_KEYS.POPUP_ALIVE);
+                    localStorage.removeItem(STORAGE_KEYS.SCRIPT_ACTIVE);
+                    isScriptActive = false;
+                    updateButtonText('Показать счет', '#4CAF50');
+                }
+            } catch {
+                // Ошибка при проверке popup - очищаем флаги
+                localStorage.removeItem(STORAGE_KEYS.POPUP_ALIVE);
+                localStorage.removeItem(STORAGE_KEYS.SCRIPT_ACTIVE);
+                isScriptActive = false;
+                updateButtonText('Показать счет', '#4CAF50');
+            }
+        } else {
+            // Popup закрыт или скрипт неактивен - гарантируем что все остановлено
+            isScriptActive = false;
+            localStorage.removeItem(STORAGE_KEYS.SCRIPT_ACTIVE);
+            updateButtonText('Показать счет', '#4CAF50');
         }
         
         // Загружаем состояние видимости кнопки
@@ -2532,25 +2608,6 @@
             hideMainButton();
         } else {
             button.style.display = 'flex';
-        }
-        
-        // Запускаем urlTrackingInterval только если скрипт активен
-        if (isScriptActive) {
-        let lastUrl = window.location.href;
-        urlTrackingInterval = setInterval(() => {
-                if (!isScriptActive) return; // Не работаем если скрипт неактивен
-                
-            const currentUrl = window.location.href;
-            if (currentUrl !== lastUrl) {
-                lastUrl = currentUrl;
-                    if (isPopupAlive()) {
-                    const settings = getSettings();
-                    sendScoreToPopup(settings.fontSize, settings.soundEnabled);
-                }
-            }
-        }, 100);
-            
-            applyAutoReloadPolicy();
         }
     }
 
